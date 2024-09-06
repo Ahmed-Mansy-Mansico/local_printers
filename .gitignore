@@ -5,3 +5,4 @@
 tags
 local_printers/docs/current
 node_modules/
+local_printers/validate_users.py

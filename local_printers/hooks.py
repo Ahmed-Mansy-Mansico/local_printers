@@ -119,7 +119,7 @@ app_license = "MIT"
 doc_events = {
 	"Sales Invoice": {
 		"on_submit": "local_printers.utils.send_si_details_on_submit",
-		"validate": "local_printers.utils.send_si_details_on_submit",
+		# "validate": "local_printers.utils.send_si_details_on_submit", # just for testing
 	}
 }
 
