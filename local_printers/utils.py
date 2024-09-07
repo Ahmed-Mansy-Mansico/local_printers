@@ -1,5 +1,5 @@
 import frappe
-from frappe.utils import cstr
+
 
 @frappe.whitelist()
 def send_si_details_on_submit(doc, method=None):
@@ -108,3 +108,31 @@ def save_printers_data(printers):
                 })
                 doc.insert()
                 frappe.db.commit()
+
+
+import frappe
+from frappe.utils import get_datetime, now_datetime, get_time, getdate
+
+@frappe.whitelist()
+def get_order_no():
+    """Get the current order number, calculated as count of submitted sales invoices from 12 AM to the current time + 1."""
+    try:
+        # Get the current date and set the start time to 12:00 AM of the current day
+        today = getdate()
+        start_of_day = get_datetime(f"{today} 00:00:00")
+        now = now_datetime()  # Get the current date and time
+
+        # Count the number of submitted Sales Invoices created between 12 AM and now
+        submitted_invoices_count = frappe.db.count("Sales Invoice", {
+            "docstatus": 1,
+            "creation": ["between", (start_of_day, now)]
+        })
+
+        # The next order number is the count of submitted invoices + 1
+        next_order_no = submitted_invoices_count + 1
+
+        return {"order_no": next_order_no}
+
+    except Exception as e:
+        frappe.log_error(f"Error in get_order_no: {e}", "Get Order No Error")
+        frappe.throw(f"Unable to generate order number: {str(e)}")
