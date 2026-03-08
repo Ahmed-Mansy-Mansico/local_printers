@@ -4,135 +4,127 @@ import frappe
 @frappe.whitelist()
 def send_si_details_on_submit(doc, method=None):
     """
-    Send Sales Invoice details to all subscribed clients using Frappe Socket
-    when the Sales Invoice is submitted.
+    On Sales Invoice submit, render print format HTML for each configured printer
+    and broadcast ready-to-print payloads via Frappe realtime (Socket.IO).
+
+    Each payload contains:
+      - printer: printer system name
+      - printer_ip: optional IP for network printers
+      - is_cashier: whether this is the cashier receipt (full items)
+      - html: fully rendered print-ready HTML (from the chosen Print Format)
+      - invoice_name: the Sales Invoice name (for logging)
     """
     try:
-        # Extract necessary details from the Sales Invoice document
-        printers = get_printer_settings(doc, doc.pos_profile)
-        formatted_printers = format_printer_items(printers, doc)
-        
-        # Publish the invoice data to all connected clients
+        print_jobs = build_print_jobs(doc)
+
+        if not print_jobs:
+            frappe.log("No printer configurations found for this invoice.")
+            return
+
         frappe.publish_realtime(
             event="sales_invoice_submitted",
-            message=formatted_printers,
-            user=None
+            message=print_jobs,
+            user=None,
         )
 
-        frappe.log("Sales Invoice details sent to subscribed clients.")
-    
-    except Exception as e:
-        frappe.log_error(frappe.get_traceback(), f"Error in send_si_details_on_submit: {str(e)}")
+        frappe.log(
+            f"Sales Invoice {doc.name}: sent {len(print_jobs)} print job(s) to subscribed clients."
+        )
+
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            f"Error in send_si_details_on_submit for {doc.name}",
+        )
 
 
-
-def format_printer_items(printers, doc):
+def build_print_jobs(doc):
     """
-    Get a formatted response for Sales Invoices, ensuring the number of responses matches
-    the number of printers, with the chosen items to be printed.
+    For each Printer Item Group that matches the invoice's POS profile + items,
+    render the configured Print Format into HTML and return a list of print jobs.
     """
-    formatted_response = []
+    printer_configs = get_printer_settings(doc, doc.pos_profile)
+    print_jobs = []
 
-    for printer_name, items in printers.items():
-        # Create a copy of the original document to avoid mutating the original `doc`
-        cur_printer = frappe._dict(doc.as_dict())
-        
-        # Update the document with printer-specific information
-        cur_printer.update({
-            "printer_name": printer_name,
-            "printer": items[0].get("printer"),
-            "printer_ip": items[0].get("printer_ip"),
-            "is_cashier": items[0].get("is_cashier"),
-        })
-        
-        cur_printer["items"] = []  # Initialize the items list for the current printer
+    for printer_name, config in printer_configs.items():
+        meta = config["meta"]
 
-        # Filter and add relevant items for this printer
-        for item in items:
-            for row in doc.items:
-                if item["item_code"] == row.item_code:
-                    cur_printer["items"].append(frappe._dict(row.as_dict()))  # Ensure rows are added as dicts
+        # Render the Print Format HTML server-side
+        print_format_name = meta.get("print_format") or "Standard"
+        no_letterhead = meta.get("no_letterhead", 0)
 
-        formatted_response.append(cur_printer)
+        html = frappe.get_print(
+            doctype="Sales Invoice",
+            name=doc.name,
+            print_format=print_format_name,
+            no_letterhead=no_letterhead,
+        )
 
-    return formatted_response
+        print_jobs.append(
+            {
+                "invoice_name": doc.name,
+                "printer": meta.get("printer"),
+                "printer_ip": meta.get("printer_ip"),
+                "is_cashier": meta.get("is_cashier"),
+                "print_format": print_format_name,
+                "html": html,
+            }
+        )
 
-    
+    return print_jobs
+
+
 def get_printer_settings(invoice_doc, pos_profile):
     """
-    Retrieve and set printer settings based on the Sales Invoice document and POS profile.
+    Return a dict keyed by Printer Item Group name:
+      {
+        "PIG-xxx": {
+          "meta": { printer, printer_ip, is_cashier, print_format, no_letterhead },
+          "items": [ { item_code, ... }, ... ]
+        }
+      }
     """
-    item_printer_mapping = {}
+    result = {}
+
     printers = frappe.get_all(
-        "Printer Item Group", 
-        filters={"pos_profile": pos_profile}, 
-        order_by="is_cashier desc"
+        "Printer Item Group",
+        filters={"pos_profile": pos_profile},
+        order_by="is_cashier desc",
     )
 
-    for printer_doc in printers:
-        printer = frappe.get_doc("Printer Item Group", printer_doc.name)
-        item_groups = {item_group.item_group for item_group in printer.printer_item_group}
+    for printer_ref in printers:
+        printer_doc = frappe.get_doc("Printer Item Group", printer_ref.name)
+        item_groups = {ig.item_group for ig in printer_doc.printer_item_group}
 
         for item in invoice_doc.items:
             item_group = frappe.db.get_value("Item", item.item_code, "item_group")
-            
+
             if "All Item Groups" in item_groups or item_group in item_groups:
-                if printer.name not in item_printer_mapping:
-                    item_printer_mapping[printer.name] = []
+                if printer_doc.name not in result:
+                    result[printer_doc.name] = {
+                        "meta": {
+                            "printer": printer_doc.printer,
+                            "printer_ip": printer_doc.printer_ip,
+                            "is_cashier": printer_doc.is_cashier,
+                            "print_format": printer_doc.print_format,
+                            "no_letterhead": printer_doc.no_letterhead,
+                        },
+                        "items": [],
+                    }
 
-                item_printer_mapping[printer.name].append({
-                    "name": printer.name,
-                    "item_code": item.item_code,
-                    "pos_profile": printer.pos_profile,
-                    "company": printer.company,
-                    "warehouse": printer.warehouse,
-                    "printer": printer.printer,
-                    "printer_ip": printer.printer_ip,
-                    "is_cashier": printer.is_cashier,
-                })
+                result[printer_doc.name]["items"].append({"item_code": item.item_code})
 
-    return item_printer_mapping
+    return result
 
 
 @frappe.whitelist()
 def save_printers_data(printers):
+    """Save printer names received from the Windows app."""
     if printers:
         for printer in printers:
-            # Check if the printer already exists
             if not frappe.db.exists("Printer Name", {"name": printer}):
-                # Create a new printer record
-                doc = frappe.get_doc({
-                    "doctype": "Printer Name",
-                    "name": printer,
-                    "printer": printer
-                })
+                doc = frappe.get_doc(
+                    {"doctype": "Printer Name", "name": printer, "printer": printer}
+                )
                 doc.insert()
                 frappe.db.commit()
-
-
-import frappe
-from frappe.utils import get_datetime, now_datetime, get_time, getdate
-
-@frappe.whitelist()
-def get_order_no():
-    """Get the current order number, calculated as count of submitted sales invoices from 12 AM to the current time + 1."""
-    try:
-        # Get the current date and set the start time to 12:00 AM of the current day
-        today = getdate()
-        start_of_day = get_datetime(f"{today} 00:00:00")
-        now = now_datetime()  # Get the current date and time
-
-        # Count the number of submitted Sales Invoices created between 12 AM and now
-        submitted_invoices_count = frappe.db.count("Sales Invoice", {
-            "docstatus": 1,
-            "creation": ["between", (start_of_day, now)]
-        })
-
-        # The next order number is the count of submitted invoices + 1
-        next_order_no = submitted_invoices_count + 1
-
-        return {"order_no": next_order_no}
-
-    except Exception as e:
-        frappe.log_error(f"Error in get_order_no: {e}", "Get Order No Error")
-        frappe.throw(f"Unable to generate order number: {str(e)}")

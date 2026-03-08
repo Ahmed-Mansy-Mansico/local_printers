@@ -16,6 +16,9 @@
   "section_break_0hwsp",
   "printer",
   "printer_ip",
+  "print_format",
+  "no_letterhead",
+  "section_break_items",
   "printer_item_group"
  ],
  "fields": [
@@ -80,6 +83,26 @@
    "label": "Printer IP"
   },
   {
+   "fieldname": "print_format",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Print Format",
+   "options": "Print Format",
+   "description": "Choose the print format to render for this printer. Leave blank to use the default Sales Invoice print format."
+  },
+  {
+   "fieldname": "no_letterhead",
+   "fieldtype": "Check",
+   "label": "No Letterhead",
+   "default": "0",
+   "description": "If checked, the letterhead will not be included in the print."
+  },
+  {
+   "fieldname": "section_break_items",
+   "fieldtype": "Section Break",
+   "label": "Item Group Routing"
+  },
+  {
    "fieldname": "printer_item_group",
    "fieldtype": "Table",
    "label": "Printer Item Groups",
@@ -89,7 +112,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-09-03 03:03:31.322776",
+ "modified": "2026-03-09 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Local Printers",
  "name": "Printer Item Group",
