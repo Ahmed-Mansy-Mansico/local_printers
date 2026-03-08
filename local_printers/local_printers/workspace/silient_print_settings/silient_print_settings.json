@@ -1,0 +1,59 @@
+{
+ "charts": [],
+ "content": "[{\"id\":\"Z6hwRCDEu6\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Silent Print Settings</span>\",\"col\":12}},{\"id\":\"HDQBkbSD6t\",\"type\":\"card\",\"data\":{\"card_name\":\"Print Settings\",\"col\":4}}]",
+ "creation": "2026-03-09 00:22:43.064640",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "printer",
+ "idx": 0,
+ "indicator_color": "green",
+ "is_hidden": 0,
+ "label": "Silient Print Settings",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Print Settings",
+   "link_count": 2,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Printer Item Group",
+   "link_count": 0,
+   "link_to": "Printer Item Group",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Printer Name",
+   "link_count": 0,
+   "link_to": "Printer Name",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-03-09 00:24:03.772167",
+ "modified_by": "Administrator",
+ "module": "Local Printers",
+ "name": "Silient Print Settings",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "roles": [],
+ "sequence_id": 39.0,
+ "shortcuts": [],
+ "title": "Silient Print Settings"
+}
