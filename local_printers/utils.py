@@ -1,4 +1,7 @@
+import re
+
 import frappe
+from frappe.utils import get_url
 
 
 @frappe.whitelist()
@@ -60,6 +63,8 @@ def build_print_jobs(doc):
             no_letterhead=no_letterhead,
         )
 
+        html = make_urls_absolute(html)
+
         print_jobs.append(
             {
                 "invoice_name": doc.name,
@@ -72,6 +77,15 @@ def build_print_jobs(doc):
         )
 
     return print_jobs
+
+
+def make_urls_absolute(html):
+    """Convert relative URLs in HTML to absolute URLs so wkhtmltopdf can resolve them."""
+    base_url = get_url()
+    # Replace src="/...", href="/...", url('/...')
+    html = re.sub(r'(src|href)=(["\'])/(?!/)', rf'\1=\2{base_url}/', html)
+    html = re.sub(r"url\((['\"]?)/(?!/)", rf"url(\1{base_url}/", html)
+    return html
 
 
 def get_printer_settings(invoice_doc, pos_profile):
