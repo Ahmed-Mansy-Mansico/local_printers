@@ -1,25 +1,24 @@
-import re
+import base64
 
 import frappe
-from frappe.utils import get_url
 
 
 @frappe.whitelist()
 def send_si_details_on_submit(doc, method=None):
     """
-    On Sales Invoice submit, render print format HTML for each configured printer
+    On Sales Invoice submit, render print format as PDF for each configured printer
     and broadcast ready-to-print payloads via Frappe realtime (Socket.IO).
 
     Each payload contains:
       - printer: printer system name
       - printer_ip: optional IP for network printers
       - is_cashier: whether this is the cashier receipt (full items)
-      - html: fully rendered print-ready HTML (from the chosen Print Format)
+      - pdf_base64: base64-encoded PDF content (ready to print)
       - invoice_name: the Sales Invoice name (for logging)
     """
     try:
         print_jobs = build_print_jobs(doc)
-
+        frappe.msgprint(f"Built {len(print_jobs)} - {print_jobs} print job(s) for Sales Invoice {doc.name}.")
         if not print_jobs:
             frappe.log("No printer configurations found for this invoice.")
             return
@@ -27,11 +26,12 @@ def send_si_details_on_submit(doc, method=None):
         frappe.publish_realtime(
             event="sales_invoice_submitted",
             message=print_jobs,
-            user=None,
+            after_commit=True,
         )
 
         frappe.log(
-            f"Sales Invoice {doc.name}: sent {len(print_jobs)} print job(s) to subscribed clients."
+            f"Sales Invoice {doc.name}: \
+            sent {len(print_jobs)} - {print_jobs} print job(s) to subscribed clients."
         )
 
     except Exception:
@@ -44,7 +44,7 @@ def send_si_details_on_submit(doc, method=None):
 def build_print_jobs(doc):
     """
     For each Printer Item Group that matches the invoice's POS profile + items,
-    render the configured Print Format into HTML and return a list of print jobs.
+    render the configured Print Format as PDF and return a list of print jobs.
     """
     printer_configs = get_printer_settings(doc, doc.pos_profile)
     print_jobs = []
@@ -52,18 +52,17 @@ def build_print_jobs(doc):
     for printer_name, config in printer_configs.items():
         meta = config["meta"]
 
-        # Render the Print Format HTML server-side
         print_format_name = meta.get("print_format") or "Standard"
         no_letterhead = meta.get("no_letterhead", 0)
 
-        html = frappe.get_print(
+        # Generate PDF server-side (clean output, no toolbar / headers)
+        pdf_content = frappe.get_print(
             doctype="Sales Invoice",
             name=doc.name,
             print_format=print_format_name,
             no_letterhead=no_letterhead,
+            as_pdf=True,
         )
-
-        html = make_urls_absolute(html)
 
         print_jobs.append(
             {
@@ -72,20 +71,11 @@ def build_print_jobs(doc):
                 "printer_ip": meta.get("printer_ip"),
                 "is_cashier": meta.get("is_cashier"),
                 "print_format": print_format_name,
-                "html": html,
+                "pdf_base64": base64.b64encode(pdf_content).decode("ascii"),
             }
         )
 
     return print_jobs
-
-
-def make_urls_absolute(html):
-    """Convert relative URLs in HTML to absolute URLs so wkhtmltopdf can resolve them."""
-    base_url = get_url()
-    # Replace src="/...", href="/...", url('/...')
-    html = re.sub(r'(src|href)=(["\'])/(?!/)', rf'\1=\2{base_url}/', html)
-    html = re.sub(r"url\((['\"]?)/(?!/)", rf"url(\1{base_url}/", html)
-    return html
 
 
 def get_printer_settings(invoice_doc, pos_profile):
