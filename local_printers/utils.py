@@ -18,7 +18,6 @@ def send_si_details_on_submit(doc, method=None):
     """
     try:
         print_jobs = build_print_jobs(doc)
-        frappe.msgprint(f"Built {len(print_jobs)} - {print_jobs} print job(s) for Sales Invoice {doc.name}.")
         if not print_jobs:
             frappe.log("No printer configurations found for this invoice.")
             return
@@ -62,6 +61,12 @@ def build_print_jobs(doc):
             print_format=print_format_name,
             no_letterhead=no_letterhead,
             as_pdf=True,
+            pdf_options={
+                "margin-left": "0mm",
+                "margin-right": "0mm",
+                "margin-top": "0mm",
+                "margin-bottom": "0mm",
+            },
         )
 
         print_jobs.append(
