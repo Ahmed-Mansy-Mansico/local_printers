@@ -1,6 +1,7 @@
 import base64
 
 import frappe
+from frappe import _
 
 
 @frappe.whitelist()
@@ -158,10 +159,16 @@ def get_printer_settings(doc, trigger_method):
             }
             continue
 
+        top_item_group_name = frappe.db.get_value(
+            "Item Group", {"parent_item_group": None, "is_group": 1}, "name"
+        )
         for item in doc.items:
             item_group = frappe.db.get_value("Item", item.item_code, "item_group")
-
-            if "All Item Groups" in item_groups or item_group in item_groups:
+            if (
+                (top_item_group_name and top_item_group_name in item_groups)
+                or "All Item Groups" in item_groups
+                or item_group in item_groups
+            ):
                 if printer_doc.name not in result:
                     result[printer_doc.name] = {
                         "meta": {
