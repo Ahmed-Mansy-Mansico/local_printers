@@ -9,6 +9,8 @@
  "engine": "InnoDB",
  "field_order": [
   "pos_profile",
+  "target_doctype",
+  "trigger_method",
   "is_cashier",
   "column_break_p0d2r",
   "company",
@@ -29,6 +31,28 @@
    "in_standard_filter": 1,
    "label": "POS Profile",
    "options": "POS Profile",
+   "reqd": 1
+  },
+  {
+   "default": "Sales Invoice",
+   "description": "Only documents of this DocType will trigger this printer config.",
+   "fieldname": "target_doctype",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Target DocType",
+   "options": "DocType",
+   "reqd": 1
+  },
+  {
+   "default": "on_submit",
+   "description": "Choose which document event should dispatch this print payload.",
+   "fieldname": "trigger_method",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Trigger Method",
+   "options": "on_submit\nafter_insert",
    "reqd": 1
   },
   {

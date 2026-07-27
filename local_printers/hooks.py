@@ -117,10 +117,10 @@ app_license = "MIT"
 # Hook on document methods and events
 
 doc_events = {
-	"Sales Invoice": {
-		"on_submit": "local_printers.utils.send_si_details_on_submit",
-		# "validate": "local_printers.utils.send_si_details_on_submit", # just for testing
-	}
+    "*": {
+        "on_submit": "local_printers.utils.send_doc_details_on_event",
+        "after_insert": "local_printers.utils.send_doc_details_on_event",
+    }
 }
 
 # Scheduled Tasks
