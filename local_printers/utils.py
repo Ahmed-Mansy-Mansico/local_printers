@@ -4,6 +4,9 @@ import frappe
 from frappe import _
 
 
+
+
+
 @frappe.whitelist()
 def send_doc_details_on_event(doc, method=None):
     """
@@ -17,6 +20,13 @@ def send_doc_details_on_event(doc, method=None):
       - pdf_base64: base64-encoded PDF content (ready to print)
       - document_name: document name (for logging)
     """
+    # Guard against the wildcard ("*") doc_events hook firing on every doctype:
+    # skip anything that can't possibly be POS-linked, and explicitly skip
+    # "Error Log" so a failure here can never recursively re-trigger itself
+    # via frappe.log_error() creating a new Error Log document.
+    if doc.doctype == "Error Log" or not getattr(doc, "pos_profile", None):
+        return
+
     trigger_method = method or "on_submit"
 
     try:
@@ -65,51 +75,77 @@ def send_si_details_on_submit(doc, method=None):
 def build_print_jobs(doc, trigger_method):
     """
     For each matching Printer Item Group, render the configured Print Format as
-    PDF and return a list of print jobs.
+    PDF (scoped to that printer's routed items) and return a list of print jobs.
     """
     printer_configs = get_printer_settings(doc, trigger_method)
     print_jobs = []
 
-    for config in printer_configs.values():
-        meta = config["meta"]
+    original_items = list(getattr(doc, "items", None) or []) or None
 
-        print_format_name = meta.get("print_format") or "Standard"
-        no_letterhead = meta.get("no_letterhead", 0)
+    try:
+        for config in printer_configs.values():
+            meta = config["meta"]
 
-        # Generate PDF server-side (clean output, no toolbar / headers)
-        pdf_content = frappe.get_print(
-            doctype=doc.doctype,
-            name=doc.name,
-            print_format=print_format_name,
-            no_letterhead=no_letterhead,
-            as_pdf=True,
-            pdf_options={
-                "margin-left": "0mm",
-                "margin-right": "0mm",
-                "margin-top": "0mm",
-                "margin-bottom": "0mm",
-            },
-        )
+            print_format_name = meta.get("print_format") or "Standard"
+            no_letterhead = meta.get("no_letterhead", 0)
 
-        if isinstance(pdf_content, (bytes, bytearray)):
-            pdf_bytes = bytes(pdf_content)
-        elif isinstance(pdf_content, str):
-            pdf_bytes = pdf_content.encode("utf-8")
-        else:
-            pdf_bytes = str(pdf_content).encode("utf-8")
+            if original_items is not None:
+                if meta.get("is_cashier"):
+                    # Cashier receipt always gets every item on the document.
+                    setattr(doc, "items", original_items)
+                else:
+                    matched_item_codes = {
+                        item["item_code"] for item in config.get("items", [])
+                    }
+                    filtered_items = [
+                        row for row in original_items if row.item_code in matched_item_codes
+                    ]
+                    setattr(doc, "items", filtered_items)
 
-        print_jobs.append(
-            {
-                "doctype": doc.doctype,
-                "document_name": doc.name,
-                "invoice_name": doc.name,
-                "printer": meta.get("printer"),
-                "printer_ip": meta.get("printer_ip"),
-                "is_cashier": meta.get("is_cashier"),
-                "print_format": print_format_name,
-                "pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"),
-            }
-        )
+                    if not filtered_items:
+                        # Nothing routed to this printer for this document - skip it.
+                        continue
+
+            # Generate PDF server-side (clean output, no toolbar / headers).
+            # Pass `doc` explicitly so the print view renders this in-memory
+            # (item-filtered) document instead of reloading the full one from the DB.
+            pdf_content = frappe.get_print(
+                doctype=doc.doctype,
+                name=doc.name,
+                print_format=print_format_name,
+                no_letterhead=no_letterhead,
+                doc=doc,
+                as_pdf=True,
+                pdf_options={
+                    "margin-left": "0mm",
+                    "margin-right": "0mm",
+                    "margin-top": "0mm",
+                    "margin-bottom": "0mm",
+                },
+            )
+
+            if isinstance(pdf_content, (bytes, bytearray)):
+                pdf_bytes = bytes(pdf_content)
+            elif isinstance(pdf_content, str):
+                pdf_bytes = pdf_content.encode("utf-8")
+            else:
+                pdf_bytes = str(pdf_content).encode("utf-8")
+
+            print_jobs.append(
+                {
+                    "doctype": doc.doctype,
+                    "document_name": doc.name,
+                    "invoice_name": doc.name,
+                    "printer": meta.get("printer"),
+                    "printer_ip": meta.get("printer_ip"),
+                    "is_cashier": meta.get("is_cashier"),
+                    "print_format": print_format_name,
+                    "pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"),
+                }
+            )
+    finally:
+        if original_items is not None:
+            setattr(doc, "items", original_items)
 
     return print_jobs
 
@@ -139,6 +175,8 @@ def get_printer_settings(doc, trigger_method):
         order_by="is_cashier desc",
     )
 
+    doc_items = getattr(doc, "items", None)
+
     for printer_ref in printers:
         printer_doc = frappe.get_doc("Printer Item Group", printer_ref.name)
         printer_items = printer_doc.get("printer_item_group") or []
@@ -146,7 +184,7 @@ def get_printer_settings(doc, trigger_method):
             ig.item_group for ig in printer_items if getattr(ig, "item_group", None)
         }
 
-        if not getattr(doc, "items", None):
+        if not doc_items:
             result[printer_doc.name] = {
                 "meta": {
                     "printer": printer_doc.get("printer"),
@@ -159,14 +197,10 @@ def get_printer_settings(doc, trigger_method):
             }
             continue
 
-        top_item_group_name = frappe.db.get_value(
-            "Item Group", {"parent_item_group": None, "is_group": 1}, "name"
-        )
-        for item in doc.items:
+        for item in doc_items:
             item_group = frappe.db.get_value("Item", item.item_code, "item_group")
             if (
-                (top_item_group_name and top_item_group_name in item_groups)
-                or "All Item Groups" in item_groups
+               "All Item Groups" in item_groups
                 or item_group in item_groups
             ):
                 if printer_doc.name not in result:
